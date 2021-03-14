@@ -1,7 +1,7 @@
 import { mpc, SessionId } from "@sine-fdn/sine-ts";
 
-const SINE_PARTY_ID = 1;
-const BROWSER_PARTY_ID = 2;
+const BROWSER_PARTY_ID = 3;
+const NUM_PARTIES = 3;
 
 /**
  * performs the MPC protocol against a single dimension
@@ -11,15 +11,12 @@ const BROWSER_PARTY_ID = 2;
 async function benchmarkingProtocol(
   jiff_instance: JIFFClient,
   secretInput: number[]
-): Promise<SecretShare> {
-  const secrets = await mpc.share_dataset_secrets(
-    jiff_instance,
-    secretInput,
-    SINE_PARTY_ID,
-    BROWSER_PARTY_ID
-  );
+): Promise<number> {
+  await jiff_instance.share_array(secretInput, undefined, undefined, [1, 2]);
 
-  return mpc.ranking_const(secrets.referenceSecrets[0], secrets.datasetSecrets);
+  const rank = jiff_instance.reshare(undefined, undefined, [1, 2, 3], [1, 2]);
+
+  return await jiff_instance.open(rank);
 }
 
 export async function datasetBenchmarking(
@@ -31,15 +28,13 @@ export async function datasetBenchmarking(
     mpc.connect({
       computationId: sessionId,
       hostname: process.env.COORDINATOR ?? "http://localhost:3000/",
-      party_id: 2,
-      party_count: 2,
+      party_id: BROWSER_PARTY_ID,
+      party_count: NUM_PARTIES,
       onConnect: async (jiff_instance: JIFFClient) => {
-        const ranks: SecretShare[] = [];
+        const res: number[] = [];
         for (let dimension = 0; dimension < numDimensions; ++dimension) {
-          ranks.push(await benchmarkingProtocol(jiff_instance, secretData));
+          res.push(await benchmarkingProtocol(jiff_instance, secretData));
         }
-
-        const res = await jiff_instance.open_array(ranks);
 
         jiff_instance.disconnect(true, true);
         resolve(res);

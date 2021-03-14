@@ -79,14 +79,13 @@ export default function DatasetPage() {
         Math.abs(new Date().getTime() - startTS.getTime())
       );
       setProcessingStatus({ s: "FINISHED", res: result });
+      await router.push(`/${res.id}`);
     } catch (error) {
       setProcessingStatus({
         s: "ERROR",
         message: `Failure while performing MPC: ${error}`,
       });
     }
-
-    // await router.push(`/${res.id}`);
   }
 
   const showForm = dataset && (s.s === "NEEDS_INPUT" || s.s === "ERROR");

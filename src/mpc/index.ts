@@ -68,7 +68,7 @@ export async function PerformFunctionCall(
   } catch (error) {}
 }
 
-export async function PerformBenchmarking(sessionId: string) {
+export async function PerformBenchmarkingAsLead(sessionId: string) {
   console.log("Starting benchmarking session", sessionId);
 
   try {
@@ -96,6 +96,38 @@ export async function PerformBenchmarking(sessionId: string) {
       party_id: PARTY_ID,
       party_count: session.processorHostnames.length,
       Zp: ZP,
+      onConnect: interpreter(s),
+    });
+  } catch (error) {
+    console.error("Failed to perform MPC", error);
+  }
+}
+
+export async function JoinBenchmarking(sessionId: string) {
+  console.log("Joining benchmarking session", sessionId);
+
+  try {
+    const session = await getSession(sessionId);
+    if (!session) {
+      console.error("Failed to find session: ", sessionId);
+      return;
+    }
+
+    await startSession(sessionId); // let this crash in case a concurrent start happend
+
+    const s: Session = {
+      id: sessionId,
+      submissionIds: [],
+      ops: [{ c: "RANKING_DATASET", dataset: [] }],
+    };
+
+    console.log("MPC is starting...");
+    mpc.connect({
+      computationId: sessionId,
+      hostname: process.env.COORDINATOR ?? DEFAULT_COORDINATOR,
+      party_id: PARTY_ID,
+      party_count: session.processorHostnames.length,
+      Zp: ZP,
       //onConnect: preprocess(interpreter(s)),
       onConnect: interpreter(s),
     });
@@ -103,6 +135,7 @@ export async function PerformBenchmarking(sessionId: string) {
     console.error("Failed to perform MPC", error);
   }
 }
+
 /*
 const preprocess = (fn: (c: JIFFClient) => unknown) => (c: JIFFClient) => {
   console.log("Starting preprocessing");
@@ -161,8 +194,6 @@ async function fromDataset(
     const ops: Session["ops"] = dataset.dimensions.map((t) => ({
       c: "RANKING_DATASET",
       dataset: t.integerValues,
-      transforms: t.inputTransform,
-      unitTransforms: t.unitTransform,
     }));
 
     return {
@@ -186,13 +217,23 @@ const interpreter = (session: Session) => async (jiff_instance: JIFFClient) => {
         return jiff_instance.open_array(mpc.ranking(secrets_sorted, secrets));
       }
       case "RANKING_DATASET": {
-        const {
-          referenceSecrets,
-          datasetSecrets,
-        } = await mpc.share_dataset_secrets(jiff_instance, op.dataset, 1, 2);
-        const res = await jiff_instance.open(
-          mpc.ranking_const(referenceSecrets[0], datasetSecrets)
+        const allSecrets = await jiff_instance.share_array(
+          op.dataset,
+          undefined,
+          undefined,
+          [1, 2]
         );
+        console.log("share array");
+        const referenceSecret = allSecrets[3][0];
+        const rank = mpc.ranking_const(referenceSecret, allSecrets[1]);
+        const rankPublic = jiff_instance.reshare(
+          rank,
+          undefined,
+          [1, 2, 3],
+          [1, 2]
+        );
+
+        const res = await jiff_instance.open(rankPublic);
         return [res];
       }
       case "FUNCTION_CALL": {

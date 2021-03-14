@@ -8,7 +8,7 @@ import Cors from "cors";
 import { Dataset } from "@prisma/client";
 import NewSessionSchema from "../../../../../../schemas/NewSession.schema";
 import prismaConnection from "../../../../../../utils/prismaConnection";
-import { PerformBenchmarking } from "../../../../../../mpc";
+import { PerformBenchmarkingAsLead } from "../../../../../../mpc";
 import initMiddleware from "../../../../../../utils/initMiddleware";
 
 const cors = initMiddleware(
@@ -58,7 +58,12 @@ async function post(
     });
   }
 
-  const maybeId = await createSession(maybeNewSession, datasetId, ["", ""], 0);
+  const maybeId = await createSession(
+    maybeNewSession,
+    datasetId,
+    ["", "", ""],
+    0
+  );
   if (!maybeId) {
     return res.status(400).json({
       success: false,
@@ -66,7 +71,18 @@ async function post(
     });
   }
 
-  PerformBenchmarking(maybeId);
+  await fetch(
+    `http://localhost:3001/api/v1/benchmarking/dataset/${datasetId}/join/${maybeId}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(req.body),
+    }
+  );
+
+  PerformBenchmarkingAsLead(maybeId);
 
   return res.status(201).json({
     success: true,
