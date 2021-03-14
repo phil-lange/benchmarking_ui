@@ -13,9 +13,7 @@ async function benchmarkingProtocol(
   secretInput: number[]
 ): Promise<number> {
   await jiff_instance.share_array(secretInput, undefined, undefined, [1, 2]);
-
   const rank = jiff_instance.reshare(undefined, undefined, [1, 2, 3], [1, 2]);
-
   return await jiff_instance.open(rank);
 }
 
