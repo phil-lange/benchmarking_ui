@@ -18,8 +18,6 @@ export default async function JoinSession(
       .json({ success: false, message: "Unrecognized verb" });
   }
 
-  console.log("body is", req.body);
-
   const datasetId = req.query.datasetId;
   const sessionId = req.query.sessionId;
   if (typeof datasetId !== "string" || typeof sessionId !== "string") {

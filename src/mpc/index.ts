@@ -16,7 +16,7 @@ const DEFAULT_COORDINATOR = "http://localhost:8080";
 type Op =
   | { c: "RANKING"; submissions: number[] }
   | {
-      c: "RANKING_DATASET";
+      c: "RANKING_DATASET" | "RANKING_DATASET_DELEGATED";
       dataset: number[];
     }
   | {
@@ -68,7 +68,12 @@ export async function PerformFunctionCall(
   } catch (error) {}
 }
 
-export async function PerformBenchmarkingAsLead(sessionId: string) {
+type ShardingOptions = { numShards: number; shardId: number };
+
+export async function PerformBenchmarkingAsLead(
+  sessionId: string,
+  options?: ShardingOptions
+) {
   console.log("Starting benchmarking session", sessionId);
 
   try {
@@ -81,7 +86,7 @@ export async function PerformBenchmarkingAsLead(sessionId: string) {
     await startSession(sessionId); // let this crash in case a concurrent start happend
 
     const s = session.datasetId
-      ? await fromDataset(session)
+      ? await fromDataset(session, options)
       : verticalize(session);
 
     if (!s) {
@@ -94,7 +99,7 @@ export async function PerformBenchmarkingAsLead(sessionId: string) {
       computationId: sessionId,
       hostname: process.env.COORDINATOR ?? DEFAULT_COORDINATOR,
       party_id: PARTY_ID,
-      party_count: session.processorHostnames.length,
+      party_count: options ? 3 : 2,
       Zp: ZP,
       onConnect: interpreter(s),
     });
@@ -118,7 +123,7 @@ export async function JoinBenchmarking(sessionId: string) {
     const s: Session = {
       id: sessionId,
       submissionIds: [],
-      ops: [{ c: "RANKING_DATASET", dataset: [] }],
+      ops: [{ c: "RANKING_DATASET_DELEGATED", dataset: [] }],
     };
 
     console.log("MPC is starting...");
@@ -126,9 +131,8 @@ export async function JoinBenchmarking(sessionId: string) {
       computationId: sessionId,
       hostname: process.env.COORDINATOR ?? DEFAULT_COORDINATOR,
       party_id: PARTY_ID,
-      party_count: session.processorHostnames.length,
+      party_count: 3,
       Zp: ZP,
-      //onConnect: preprocess(interpreter(s)),
       onConnect: interpreter(s),
     });
   } catch (error) {
@@ -180,7 +184,8 @@ function verticalize(
 }
 
 async function fromDataset(
-  s: ExpandedBenchmarkingSession
+  s: ExpandedBenchmarkingSession,
+  options?: ShardingOptions
 ): Promise<Session | null> {
   try {
     const dataset = s.datasetId ? await getDataset(s.datasetId) : null;
@@ -192,8 +197,8 @@ async function fromDataset(
 
     // for each output dimension, perform MPC of kind "RANKING_DATASET"
     const ops: Session["ops"] = dataset.dimensions.map((t) => ({
-      c: "RANKING_DATASET",
-      dataset: t.integerValues,
+      c: options ? "RANKING_DATASET_DELEGATED" : "RANKING_DATASET",
+      dataset: shardDataset(t.integerValues, options),
     }));
 
     return {
@@ -204,6 +209,28 @@ async function fromDataset(
   } catch (error) {}
 
   return null;
+}
+
+function shardDataset(
+  integerValues: number[],
+  options?: ShardingOptions
+): number[] {
+  if (!options) {
+    return integerValues;
+  }
+
+  const res: number[] = [];
+  for (
+    let idx = options.shardId;
+    idx < integerValues.length;
+    idx += options.numShards
+  ) {
+    res.push(integerValues[idx]);
+  }
+
+  console.log("shard dataset", res, integerValues);
+
+  return res;
 }
 
 const interpreter = (session: Session) => async (jiff_instance: JIFFClient) => {
@@ -217,13 +244,22 @@ const interpreter = (session: Session) => async (jiff_instance: JIFFClient) => {
         return jiff_instance.open_array(mpc.ranking(secrets_sorted, secrets));
       }
       case "RANKING_DATASET": {
+        const {
+          referenceSecrets,
+          datasetSecrets,
+        } = await mpc.share_dataset_secrets(jiff_instance, op.dataset, 1, 2);
+        const res = await jiff_instance.open(
+          mpc.ranking_const(referenceSecrets[0], datasetSecrets)
+        );
+        return [res];
+      }
+      case "RANKING_DATASET_DELEGATED": {
         const allSecrets = await jiff_instance.share_array(
           op.dataset,
           undefined,
           undefined,
           [1, 2]
         );
-        console.log("share array");
         const referenceSecret = allSecrets[3][0];
         const rank = mpc.ranking_const(referenceSecret, allSecrets[1]);
         const rankPublic = jiff_instance.reshare(

@@ -17,6 +17,11 @@ const cors = initMiddleware(
   })
 );
 
+const DELEGATED_UPSTREAM_HOST = process.env.DELEGATED_UPSTREAM_HOST;
+if (typeof DELEGATED_UPSTREAM_HOST !== "string") {
+  throw new Error("DELEGATED_UPSTREAM_HOST is not set");
+}
+
 export default async function NewBenchmarkingSession(
   req: NextApiRequest,
   res: NextApiResponse<NewSessionApiResponse | SessionListingApiResponse>
@@ -58,10 +63,12 @@ async function post(
     });
   }
 
+  const delegated = maybeNewSession.input[0].options?.delegated ?? false;
+
   const maybeId = await createSession(
     maybeNewSession,
     datasetId,
-    ["", "", ""],
+    delegated ? ["", "", ""] : ["", ""],
     0
   );
   if (!maybeId) {
@@ -71,18 +78,20 @@ async function post(
     });
   }
 
-  await fetch(
-    `http://localhost:3001/api/v1/benchmarking/dataset/${datasetId}/join/${maybeId}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(req.body),
-    }
-  );
+  if (delegated) {
+    await fetch(
+      `${process.env.DELEGATED_UPSTREAM_HOST}/api/v1/benchmarking/dataset/${datasetId}/join/${maybeId}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(req.body),
+      }
+    );
+  }
 
-  PerformBenchmarkingAsLead(maybeId);
+  PerformBenchmarkingAsLead(maybeId, maybeNewSession.input[0].options);
 
   return res.status(201).json({
     success: true,
