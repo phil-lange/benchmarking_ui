@@ -6,8 +6,8 @@ type UserInput = NewSession["input"][0];
 const computationOptionsSchema: Yup.SchemaOf<BenchmarkingComputationOptions> = Yup.object(
   {
     delegated: Yup.mixed().oneOf([true]).required(),
-    numShards: Yup.number().integer().min(1).required(),
-    shardId: Yup.number().integer().min(0).required(),
+    numShards: Yup.number().integer().min(1).max(1).required(),
+    shardId: Yup.number().integer().min(0).max(0).required(),
   }
 ).test(
   "valid-sharding",

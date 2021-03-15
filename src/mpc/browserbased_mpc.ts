@@ -80,8 +80,8 @@ async function datasetBenchmarking(
 type Dataset = DatasetListingApiSuccessResponse["datasets"][0];
 
 export interface BenchmarkingResult {
-  results: number[];
-  sessionIds: string[];
+  results: Promise<number[]>;
+  sessionId: string;
 }
 
 export async function performBenchmarking(
@@ -90,45 +90,27 @@ export async function performBenchmarking(
   numShards?: number
 ): Promise<BenchmarkingResult> {
   const delegated = numShards !== undefined;
-  const sessions: NewSession[] = Array.from({ length: numShards ?? 1 }).map(
-    (_, shardId) => ({
-      title: dataset.name,
-      numParties: delegated ? 3 : 2,
-      input: dataset.dimensions.map((d) => ({
-        title: d,
-        computation: ComputationKind.RANKING,
-        options: numShards
-          ? {
-              delegated: true,
-              numShards,
-              shardId,
-            }
-          : undefined,
-      })),
-    })
-  );
+  const session: NewSession = {
+    title: dataset.name,
+    numParties: delegated ? 3 : 2,
+    input: dataset.dimensions.map((d) => ({
+      title: d,
+      computation: ComputationKind.RANKING,
+      options: numShards
+        ? {
+            delegated: true,
+            numShards: 1,
+            shardId: 0,
+          }
+        : undefined,
+    })),
+  };
 
-  const sessionIds = await Promise.all(
-    sessions.map((s) => newDatasetSession(dataset.id, s))
-  );
-
-  const allResults = await Promise.all(
-    sessionIds.map((sessionId) =>
-      datasetBenchmarking(sessionId, secretData, delegated)
-    )
-  );
-
-  const result = Array.from({ length: secretData.length }).map(() => 1);
-
-  for (const res of allResults) {
-    res.forEach((val, idx) => (result[idx] = result[idx] + val));
-  }
-
-  console.log("allResults", allResults);
-  console.log("result", result);
+  const sessionId = await newDatasetSession(dataset.id, session);
+  const results = datasetBenchmarking(sessionId, secretData, delegated);
   return {
-    results: result,
-    sessionIds,
+    results,
+    sessionId,
   };
 }
 

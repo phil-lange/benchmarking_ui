@@ -19,7 +19,7 @@ type ProcessingStatus =
   | { s: "FINISHED"; res: number[] }
   | { s: "ERROR"; message: string };
 
-const NUM_SHARDS = 3;
+const NUM_SHARDS = 1;
 
 export default function DatasetPage() {
   const { data: datasets, error } = useDatasetListing();
@@ -48,16 +48,19 @@ export default function DatasetPage() {
     setProcessingStatus({ s: "MPC_RUNNING" });
     const startTS = new Date();
     try {
-      const { results } = await performBenchmarking(
+      const { results: resultsPromise, sessionId } = await performBenchmarking(
         dataset,
         submission.integerValues,
         NUM_SHARDS
       );
+
+      const results = await resultsPromise;
       console.log(
         "Runtime: ",
         Math.abs(new Date().getTime() - startTS.getTime())
       );
       setProcessingStatus({ s: "FINISHED", res: results });
+      await router.push(`/${sessionId}`);
     } catch (error) {
       setProcessingStatus({
         s: "ERROR",
